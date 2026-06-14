@@ -1,84 +1,41 @@
 package com.eventmaster.controller;
 
-import com.eventmaster.model.Recommendation;
+import com.eventmaster.model.RecommendedEvent;
 import com.eventmaster.service.RecommendationService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
+import javax.servlet.http.HttpServletRequest;
 import java.util.List;
-import java.util.Optional;
 
 @RestController
 @RequestMapping("/recommendations")
 public class RecommendationController {
-    
-    private final RecommendationService recommendationService;
-    
+
     @Autowired
-    public RecommendationController(RecommendationService recommendationService) {
-        this.recommendationService = recommendationService;
-    }
-    
+    private RecommendationService recommendationService;
+
     @GetMapping
-    public ResponseEntity<List<Recommendation>> getAllRecommendations() {
-        List<Recommendation> recommendations = recommendationService.getAllRecommendations();
-        return ResponseEntity.ok(recommendations);
+    public ResponseEntity<List<RecommendedEvent>> getRecommendations(
+            @RequestParam(defaultValue = "20") int limit,
+            Authentication authentication,
+            HttpServletRequest request) {
+        String token = extractToken(request);
+        List<RecommendedEvent> recs = recommendationService.getRecommendations(
+                authentication.getName(), token, limit);
+        return ResponseEntity.ok(recs);
     }
-    
-    @GetMapping("/user/{userId}")
-    public ResponseEntity<List<Recommendation>> getRecommendationsForUser(@PathVariable Long userId) {
-        List<Recommendation> recommendations = recommendationService.getRecommendationsForUser(userId);
-        return ResponseEntity.ok(recommendations);
-    }
-    
-    @GetMapping("/user/{userId}/top")
-    public ResponseEntity<List<Recommendation>> getTopRecommendationsForUser(@PathVariable Long userId) {
-        List<Recommendation> recommendations = recommendationService.getTopRecommendationsForUser(userId);
-        return ResponseEntity.ok(recommendations);
-    }
-    
-    @GetMapping("/user/{userId}/type/{type}")
-    public ResponseEntity<List<Recommendation>> getRecommendationsForUserByType(
-            @PathVariable Long userId, 
-            @PathVariable String type) {
-        List<Recommendation> recommendations = recommendationService.getRecommendationsForUserByType(userId, type);
-        return ResponseEntity.ok(recommendations);
-    }
-    
-    @GetMapping("/event/{eventId}")
-    public ResponseEntity<List<Recommendation>> getRecommendationsForEvent(@PathVariable Long eventId) {
-        List<Recommendation> recommendations = recommendationService.getRecommendationsForEvent(eventId);
-        return ResponseEntity.ok(recommendations);
-    }
-    
-    @GetMapping("/user/{userId}/event/{eventId}")
-    public ResponseEntity<Recommendation> getRecommendationByUserAndEvent(
-            @PathVariable Long userId, 
-            @PathVariable Long eventId) {
-        Optional<Recommendation> recommendation = recommendationService.getRecommendationByUserAndEvent(userId, eventId);
-        return recommendation.map(ResponseEntity::ok)
-                .orElseGet(() -> ResponseEntity.notFound().build());
-    }
-    
-    @PostMapping
-    public ResponseEntity<Recommendation> createRecommendation(@RequestBody Recommendation recommendation) {
-        Recommendation savedRecommendation = recommendationService.saveRecommendation(recommendation);
-        return ResponseEntity.ok(savedRecommendation);
-    }
-    
-    @PutMapping("/{id}")
-    public ResponseEntity<Recommendation> updateRecommendation(
-            @PathVariable Long id, 
-            @RequestBody Recommendation recommendation) {
-        recommendation.setId(id);
-        Recommendation updatedRecommendation = recommendationService.saveRecommendation(recommendation);
-        return ResponseEntity.ok(updatedRecommendation);
-    }
-    
-    @DeleteMapping("/{id}")
-    public ResponseEntity<Void> deleteRecommendation(@PathVariable Long id) {
-        recommendationService.deleteRecommendation(id);
-        return ResponseEntity.noContent().build();
+
+    private String extractToken(HttpServletRequest request) {
+        String header = request.getHeader("Authorization");
+        if (header != null && header.startsWith("Bearer ")) {
+            return header.substring(7);
+        }
+        return null;
     }
 }

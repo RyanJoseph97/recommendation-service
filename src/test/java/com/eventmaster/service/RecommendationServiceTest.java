@@ -1,7 +1,10 @@
 package com.eventmaster.service;
 
-import com.eventmaster.model.Recommendation;
-import com.eventmaster.repository.RecommendationRepository;
+import com.eventmaster.client.EventServiceClient;
+import com.eventmaster.client.UserServiceClient;
+import com.eventmaster.model.CandidateEvent;
+import com.eventmaster.model.RecommendedEvent;
+import com.eventmaster.model.RsvpSummary;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.*;
@@ -10,7 +13,6 @@ import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
-import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -18,117 +20,221 @@ import static org.mockito.Mockito.*;
 public class RecommendationServiceTest {
 
     @Mock
-    private RecommendationRepository recommendationRepository;
+    private UserServiceClient userServiceClient;
+
+    @Mock
+    private EventServiceClient eventServiceClient;
 
     @InjectMocks
     private RecommendationService recommendationService;
 
-    private Recommendation rec1;
-    private Recommendation rec2;
+    private static final String USERNAME = "alice";
+    private static final String TOKEN = "test-token";
 
     @BeforeEach
     public void setup() {
         MockitoAnnotations.openMocks(this);
-        rec1 = new Recommendation(1L, 10L, 100L, 0.95, "COLLABORATIVE", LocalDateTime.now());
-        rec2 = new Recommendation(2L, 10L, 200L, 0.75, "CONTENT_BASED", LocalDateTime.now());
+    }
+
+    private CandidateEvent candidate(long id, String creator, String category, int going, int interested) {
+        CandidateEvent e = new CandidateEvent();
+        e.setId(id);
+        e.setTitle("Event " + id);
+        e.setCreatorUsername(creator);
+        e.setCategory(category);
+        e.setGoingCount(going);
+        e.setInterestedCount(interested);
+        return e;
+    }
+
+    private RsvpSummary rsvp(long id, String category) {
+        RsvpSummary r = new RsvpSummary();
+        r.setId(id);
+        r.setCategory(category);
+        return r;
     }
 
     @Test
-    public void getRecommendationsForUser_returnsListForUser() {
-        when(recommendationRepository.findByUserId(10L)).thenReturn(Arrays.asList(rec1, rec2));
+    public void getRecommendations_emptyEverything_returnsEmpty() {
+        when(userServiceClient.getFollowingUsernames(USERNAME, TOKEN)).thenReturn(Collections.emptyList());
+        when(eventServiceClient.getRsvpedEvents(USERNAME, TOKEN)).thenReturn(Collections.emptyList());
+        when(eventServiceClient.getUpcomingPublicEvents(any())).thenReturn(Collections.emptyList());
 
-        List<Recommendation> result = recommendationService.getRecommendationsForUser(10L);
-
-        assertEquals(2, result.size());
-        verify(recommendationRepository).findByUserId(10L);
-    }
-
-    @Test
-    public void getRecommendationsForUser_emptyList_returnsEmpty() {
-        when(recommendationRepository.findByUserId(99L)).thenReturn(Collections.emptyList());
-
-        List<Recommendation> result = recommendationService.getRecommendationsForUser(99L);
+        List<RecommendedEvent> result = recommendationService.getRecommendations(USERNAME, TOKEN, 20);
 
         assertTrue(result.isEmpty());
     }
 
     @Test
-    public void getTopRecommendationsForUser_orderedByScoreDesc() {
-        when(recommendationRepository.findByUserIdOrderByScoreDesc(10L))
-                .thenReturn(Arrays.asList(rec1, rec2));
+    public void getRecommendations_socialScore_followedCreatorRanksHigher() {
+        when(userServiceClient.getFollowingUsernames(USERNAME, TOKEN)).thenReturn(List.of("bob"));
+        when(eventServiceClient.getRsvpedEvents(USERNAME, TOKEN)).thenReturn(Collections.emptyList());
 
-        List<Recommendation> result = recommendationService.getTopRecommendationsForUser(10L);
+        CandidateEvent byBob = candidate(1L, "bob", "MUSIC", 0, 0);
+        CandidateEvent byCarol = candidate(2L, "carol", "MUSIC", 0, 0);
+        when(eventServiceClient.getUpcomingPublicEvents(any())).thenReturn(Arrays.asList(byBob, byCarol));
 
-        assertEquals(2, result.size());
-        assertEquals(0.95, result.get(0).getScore());
-        verify(recommendationRepository).findByUserIdOrderByScoreDesc(10L);
-    }
-
-    @Test
-    public void getRecommendationsForUserByType_filtersCorrectly() {
-        when(recommendationRepository.findByUserIdAndRecommendationType(10L, "COLLABORATIVE"))
-                .thenReturn(Collections.singletonList(rec1));
-
-        List<Recommendation> result = recommendationService.getRecommendationsForUserByType(10L, "COLLABORATIVE");
-
-        assertEquals(1, result.size());
-        assertEquals("COLLABORATIVE", result.get(0).getRecommendationType());
-    }
-
-    @Test
-    public void getRecommendationsForEvent_returnsList() {
-        when(recommendationRepository.findByEventId(100L)).thenReturn(Collections.singletonList(rec1));
-
-        List<Recommendation> result = recommendationService.getRecommendationsForEvent(100L);
-
-        assertEquals(1, result.size());
-        assertEquals(100L, result.get(0).getEventId());
-    }
-
-    @Test
-    public void getRecommendationByUserAndEvent_found_returnsOptional() {
-        when(recommendationRepository.findByUserIdAndEventId(10L, 100L)).thenReturn(Optional.of(rec1));
-
-        Optional<Recommendation> result = recommendationService.getRecommendationByUserAndEvent(10L, 100L);
-
-        assertTrue(result.isPresent());
-        assertEquals(100L, result.get().getEventId());
-    }
-
-    @Test
-    public void getRecommendationByUserAndEvent_notFound_returnsEmpty() {
-        when(recommendationRepository.findByUserIdAndEventId(99L, 99L)).thenReturn(Optional.empty());
-
-        Optional<Recommendation> result = recommendationService.getRecommendationByUserAndEvent(99L, 99L);
-
-        assertFalse(result.isPresent());
-    }
-
-    @Test
-    public void saveRecommendation_delegatesToRepository() {
-        when(recommendationRepository.save(rec1)).thenReturn(rec1);
-
-        Recommendation saved = recommendationService.saveRecommendation(rec1);
-
-        assertEquals(rec1.getId(), saved.getId());
-        verify(recommendationRepository).save(rec1);
-    }
-
-    @Test
-    public void getAllRecommendations_returnsList() {
-        when(recommendationRepository.findAll()).thenReturn(Arrays.asList(rec1, rec2));
-
-        List<Recommendation> result = recommendationService.getAllRecommendations();
+        List<RecommendedEvent> result = recommendationService.getRecommendations(USERNAME, TOKEN, 20);
 
         assertEquals(2, result.size());
+        assertEquals(1L, result.get(0).getId());
+        assertTrue(result.get(0).getScore() > result.get(1).getScore());
     }
 
     @Test
-    public void deleteRecommendation_callsDeleteById() {
-        doNothing().when(recommendationRepository).deleteById(1L);
+    public void getRecommendations_excludesAlreadyRsvpedEvents() {
+        when(userServiceClient.getFollowingUsernames(USERNAME, TOKEN)).thenReturn(Collections.emptyList());
+        when(eventServiceClient.getRsvpedEvents(USERNAME, TOKEN)).thenReturn(List.of(rsvp(1L, "MUSIC")));
 
-        recommendationService.deleteRecommendation(1L);
+        CandidateEvent rsvpedEvent = candidate(1L, "bob", "MUSIC", 5, 5);
+        CandidateEvent otherEvent = candidate(2L, "carol", "SPORTS", 0, 0);
+        when(eventServiceClient.getUpcomingPublicEvents(any())).thenReturn(Arrays.asList(rsvpedEvent, otherEvent));
 
-        verify(recommendationRepository).deleteById(1L);
+        List<RecommendedEvent> result = recommendationService.getRecommendations(USERNAME, TOKEN, 20);
+
+        assertEquals(1, result.size());
+        assertEquals(2L, result.get(0).getId());
+    }
+
+    @Test
+    public void getRecommendations_excludesOwnEvents() {
+        when(userServiceClient.getFollowingUsernames(USERNAME, TOKEN)).thenReturn(Collections.emptyList());
+        when(eventServiceClient.getRsvpedEvents(USERNAME, TOKEN)).thenReturn(Collections.emptyList());
+
+        CandidateEvent ownEvent = candidate(1L, USERNAME, "MUSIC", 5, 5);
+        CandidateEvent otherEvent = candidate(2L, "bob", "SPORTS", 0, 0);
+        when(eventServiceClient.getUpcomingPublicEvents(any())).thenReturn(Arrays.asList(ownEvent, otherEvent));
+
+        List<RecommendedEvent> result = recommendationService.getRecommendations(USERNAME, TOKEN, 20);
+
+        assertEquals(1, result.size());
+        assertEquals(2L, result.get(0).getId());
+    }
+
+    @Test
+    public void getRecommendations_categoryScore_rsvpHistoryBoostsSameCategory() {
+        when(userServiceClient.getFollowingUsernames(USERNAME, TOKEN)).thenReturn(Collections.emptyList());
+        when(eventServiceClient.getRsvpedEvents(USERNAME, TOKEN)).thenReturn(List.of(rsvp(99L, "MUSIC")));
+
+        CandidateEvent musicEvent = candidate(1L, "bob", "MUSIC", 0, 0);
+        CandidateEvent sportsEvent = candidate(2L, "carol", "SPORTS", 0, 0);
+        when(eventServiceClient.getUpcomingPublicEvents(any())).thenReturn(Arrays.asList(musicEvent, sportsEvent));
+
+        List<RecommendedEvent> result = recommendationService.getRecommendations(USERNAME, TOKEN, 20);
+
+        assertEquals(2, result.size());
+        assertEquals(1L, result.get(0).getId());
+        assertTrue(result.get(0).getScore() > result.get(1).getScore());
+    }
+
+    @Test
+    public void getRecommendations_popularityScore_higherEngagementRanksHigher() {
+        when(userServiceClient.getFollowingUsernames(USERNAME, TOKEN)).thenReturn(Collections.emptyList());
+        when(eventServiceClient.getRsvpedEvents(USERNAME, TOKEN)).thenReturn(Collections.emptyList());
+
+        CandidateEvent popular = candidate(1L, "bob", "OTHER", 50, 30);
+        CandidateEvent unpopular = candidate(2L, "carol", "OTHER", 0, 0);
+        when(eventServiceClient.getUpcomingPublicEvents(any())).thenReturn(Arrays.asList(popular, unpopular));
+
+        List<RecommendedEvent> result = recommendationService.getRecommendations(USERNAME, TOKEN, 20);
+
+        assertEquals(2, result.size());
+        assertEquals(1L, result.get(0).getId());
+        assertTrue(result.get(0).getScore() > result.get(1).getScore());
+    }
+
+    @Test
+    public void getRecommendations_respectsLimit() {
+        when(userServiceClient.getFollowingUsernames(USERNAME, TOKEN)).thenReturn(Collections.emptyList());
+        when(eventServiceClient.getRsvpedEvents(USERNAME, TOKEN)).thenReturn(Collections.emptyList());
+
+        List<CandidateEvent> candidates = Arrays.asList(
+                candidate(1L, "a", "OTHER", 0, 0),
+                candidate(2L, "b", "OTHER", 0, 0),
+                candidate(3L, "c", "OTHER", 0, 0));
+        when(eventServiceClient.getUpcomingPublicEvents(any())).thenReturn(candidates);
+
+        List<RecommendedEvent> result = recommendationService.getRecommendations(USERNAME, TOKEN, 2);
+
+        assertEquals(2, result.size());
+    }
+
+    @Test
+    public void getRecommendations_nullEngagementCounts_treatedAsZero() {
+        when(userServiceClient.getFollowingUsernames(USERNAME, TOKEN)).thenReturn(Collections.emptyList());
+        when(eventServiceClient.getRsvpedEvents(USERNAME, TOKEN)).thenReturn(Collections.emptyList());
+
+        CandidateEvent e = candidate(1L, "bob", "OTHER", 0, 0);
+        e.setGoingCount(null);
+        e.setInterestedCount(null);
+        when(eventServiceClient.getUpcomingPublicEvents(any())).thenReturn(List.of(e));
+
+        List<RecommendedEvent> result = recommendationService.getRecommendations(USERNAME, TOKEN, 20);
+
+        assertEquals(1, result.size());
+        assertEquals(0.0, result.get(0).getScore(), 0.001);
+    }
+
+    @Test
+    public void getRecommendations_urgency_soonerEventRanksHigher() {
+        when(userServiceClient.getFollowingUsernames(USERNAME, TOKEN)).thenReturn(Collections.emptyList());
+        when(eventServiceClient.getRsvpedEvents(USERNAME, TOKEN)).thenReturn(Collections.emptyList());
+
+        CandidateEvent soon = candidate(1L, "bob", "OTHER", 0, 0);
+        soon.setStartTime(LocalDateTime.now().plusDays(1));
+
+        CandidateEvent distant = candidate(2L, "carol", "OTHER", 0, 0);
+        distant.setStartTime(LocalDateTime.now().plusDays(20));
+
+        when(eventServiceClient.getUpcomingPublicEvents(any())).thenReturn(Arrays.asList(soon, distant));
+
+        List<RecommendedEvent> result = recommendationService.getRecommendations(USERNAME, TOKEN, 20);
+
+        assertEquals(2, result.size());
+        assertEquals(1L, result.get(0).getId());
+        assertTrue(result.get(0).getScore() > result.get(1).getScore());
+    }
+
+    @Test
+    public void getRecommendations_popularityDecay_recentEventBeatsOlderEventWithSameEngagement() {
+        when(userServiceClient.getFollowingUsernames(USERNAME, TOKEN)).thenReturn(Collections.emptyList());
+        when(eventServiceClient.getRsvpedEvents(USERNAME, TOKEN)).thenReturn(Collections.emptyList());
+
+        CandidateEvent recent = candidate(1L, "bob", "OTHER", 100, 0);
+        recent.setCreatedAt(LocalDateTime.now().minusDays(1));
+        recent.setStartTime(LocalDateTime.now().plusDays(7));
+
+        CandidateEvent stale = candidate(2L, "carol", "OTHER", 100, 0);
+        stale.setCreatedAt(LocalDateTime.now().minusDays(60));
+        stale.setStartTime(LocalDateTime.now().plusDays(7));
+
+        when(eventServiceClient.getUpcomingPublicEvents(any())).thenReturn(Arrays.asList(stale, recent));
+
+        List<RecommendedEvent> result = recommendationService.getRecommendations(USERNAME, TOKEN, 20);
+
+        assertEquals(2, result.size());
+        assertEquals(1L, result.get(0).getId());
+        assertTrue(result.get(0).getScore() > result.get(1).getScore());
+    }
+
+    @Test
+    public void getRecommendations_diversityCap_limitsEventsPerCreator() {
+        when(userServiceClient.getFollowingUsernames(USERNAME, TOKEN)).thenReturn(Collections.emptyList());
+        when(eventServiceClient.getRsvpedEvents(USERNAME, TOKEN)).thenReturn(Collections.emptyList());
+
+        List<CandidateEvent> candidates = Arrays.asList(
+                candidate(1L, "prolific", "OTHER", 0, 0),
+                candidate(2L, "prolific", "OTHER", 0, 0),
+                candidate(3L, "prolific", "OTHER", 0, 0),
+                candidate(4L, "other", "OTHER", 0, 0));
+        when(eventServiceClient.getUpcomingPublicEvents(any())).thenReturn(candidates);
+
+        List<RecommendedEvent> result = recommendationService.getRecommendations(USERNAME, TOKEN, 10);
+
+        long fromProlific = result.stream()
+                .filter(r -> "prolific".equals(r.getCreatorUsername()))
+                .count();
+        assertEquals(2, fromProlific);
+        assertEquals(3, result.size());
     }
 }
