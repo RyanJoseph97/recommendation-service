@@ -25,9 +25,10 @@ public class RecommendationController {
             @RequestParam(defaultValue = "20") int limit,
             Authentication authentication,
             HttpServletRequest request) {
+        int safeLimit = Math.max(1, Math.min(limit, 100));
         String token = extractToken(request);
         List<RecommendedEvent> recs = recommendationService.getRecommendations(
-                authentication.getName(), token, limit);
+                authentication.getName(), token, safeLimit);
         return ResponseEntity.ok(recs);
     }
 
