@@ -99,6 +99,9 @@ public class RecommendationService {
         scored.sort(Comparator.comparingDouble(RecommendedEvent::getScore).reversed());
 
         // Enforce per-creator diversity: admit at most MAX_PER_CREATOR events per organizer
+        if (limit <= 0) {
+            return Collections.emptyList();
+        }
         Map<String, Integer> creatorCount = new HashMap<>();
         List<RecommendedEvent> result = new ArrayList<>(limit);
         for (RecommendedEvent rec : scored) {
