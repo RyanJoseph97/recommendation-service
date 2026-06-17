@@ -6,11 +6,13 @@ import com.eventmaster.model.CandidateEvent;
 import com.eventmaster.model.RecommendedEvent;
 import com.eventmaster.model.RsvpSummary;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
+import java.util.concurrent.Executor;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
@@ -31,15 +33,21 @@ public class RecommendationService {
     @Autowired
     private EventServiceClient eventServiceClient;
 
+    @Autowired
+    @Qualifier("recommendationExecutor")
+    private Executor executor;
+
     public List<RecommendedEvent> getRecommendations(String username, String token, int limit) {
+        if (limit <= 0) return Collections.emptyList();
+
         CompletableFuture<List<String>> followingF = CompletableFuture.supplyAsync(
-                () -> userServiceClient.getFollowingUsernames(username, token));
+                () -> userServiceClient.getFollowingUsernames(username, token), executor);
         CompletableFuture<List<RsvpSummary>> rsvpedF = CompletableFuture.supplyAsync(
-                () -> eventServiceClient.getRsvpedEvents(username, token));
+                () -> eventServiceClient.getRsvpedEvents(username, token), executor);
         CompletableFuture<List<CandidateEvent>> candidatesF = CompletableFuture.supplyAsync(
-                () -> eventServiceClient.getUpcomingPublicEvents(LocalDateTime.now()));
+                () -> eventServiceClient.getUpcomingPublicEvents(LocalDateTime.now()), executor);
         CompletableFuture<double[]> userCoordsF = CompletableFuture.supplyAsync(
-                () -> userServiceClient.getUserCoordinates(username, token));
+                () -> userServiceClient.getUserCoordinates(username, token), executor);
 
         Set<String> following = new HashSet<>(followingF.join());
         List<RsvpSummary> rsvped = rsvpedF.join();

@@ -13,6 +13,7 @@ import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.Executor;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -25,6 +26,9 @@ public class RecommendationServiceTest {
     @Mock
     private EventServiceClient eventServiceClient;
 
+    @Mock
+    private Executor executor;
+
     @InjectMocks
     private RecommendationService recommendationService;
 
@@ -34,6 +38,9 @@ public class RecommendationServiceTest {
     @BeforeEach
     public void setup() {
         MockitoAnnotations.openMocks(this);
+        // Run tasks synchronously in the calling thread so tests remain deterministic
+        doAnswer(inv -> { ((Runnable) inv.getArgument(0)).run(); return null; })
+                .when(executor).execute(any(Runnable.class));
     }
 
     private CandidateEvent candidate(long id, String creator, String category, int going, int interested) {
