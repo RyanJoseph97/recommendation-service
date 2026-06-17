@@ -25,6 +25,7 @@ public class SecurityConfig {
             .and()
             .authorizeRequests()
                 .antMatchers("/h2-console/**").permitAll()
+                .antMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                 // All recommendation endpoints require a valid JWT
                 .anyRequest().authenticated()
             .and()
